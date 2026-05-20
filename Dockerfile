@@ -22,6 +22,9 @@ FROM node:25-alpine
 # Set working directory
 WORKDIR /app
 
+# Optional Bun runtime for experiments (fallback to Node if unavailable).
+RUN npm install -g bun@latest || true
+
 # Copy production dependencies from the builder stage
 COPY --from=builder /app/node_modules ./node_modules
 
@@ -29,18 +32,19 @@ COPY --from=builder /app/node_modules ./node_modules
 # This includes the 'src' directory, default config, and package files for runtime information.
 COPY src/ ./src/
 COPY config.default.js ./config.default.js
+COPY config.js ./config.js
 COPY package.json ./package.json
 
-# Expose the port the application listens on (default is 3000 from config.default.js)
-EXPOSE 3000
+# Expose the default NodeLink port.
+EXPOSE 2333
 
-# Set environment variables for configuration
-# These can be overridden via docker-compose.yml or 'docker run -e'
-# Example: NODELINK_SERVER_PASSWORD=your_secure_password
-ENV NODELINK_SERVER_PORT=3000 \
-    NODELINK_SERVER_HOST=0.0.0.0 \
-    NODELINK_CLUSTER_ENABLED=true
+# Set environment variables for configuration.
+ENV NODELINK_SERVER_HOST=0.0.0.0 \
+    NODELINK_CLUSTER_ENABLED=true \
+    CLUSTER_WORKERS=1 \
+    NODELINK_WORKER_MAX_OLD_SPACE_MB=192 \
+    NODELINK_SOURCE_WORKER_MAX_OLD_SPACE_MB=128 \
+    NODELINK_RUNTIME=node
 
-# Command to run the application
-# It uses the 'start' script defined in package.json
-CMD ["npm", "start"]
+# Railway injects PORT at runtime; pass it into NodeLink config.
+CMD ["sh", "-c", "export NODELINK_SERVER_PORT=${PORT:-2333}; if [ \"${NODELINK_RUNTIME}\" = \"bun\" ]; then if command -v bun >/dev/null 2>&1; then export NODELINK_SERVER_USEBUNSERVER=${NODELINK_SERVER_USEBUNSERVER:-true}; exec npm run start:bun; else echo \"[WARN] NODELINK_RUNTIME=bun requested, but bun binary is unavailable. Falling back to node.\"; fi; fi; exec npm start"]
