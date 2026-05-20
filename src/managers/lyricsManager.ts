@@ -304,11 +304,16 @@ export default class LyricsManager {
         }
       } else {
         const lyrics = await lyricsSource.getLyrics(trackInfo, language)
-        if (lyrics && lyrics.loadType !== 'empty') {
-          if (lyrics.loadType === 'lyrics') {
-            lyrics.data.provider = sourceName
-          }
+        if (lyrics?.loadType === 'lyrics') {
+          lyrics.data.provider = sourceName
           return lyrics
+        }
+        if (lyrics?.loadType === 'error') {
+          logger(
+            'warn',
+            'Lyrics',
+            `Primary lyrics source ${sourceName} failed for ${trackInfo?.title || 'Unknown Title'}: ${lyrics.data.message}`
+          )
         }
       }
     }
@@ -323,7 +328,16 @@ export default class LyricsManager {
       )
       const lyrics = await source.getLyrics(trackInfo, language)
 
-      if (lyrics && lyrics.loadType !== 'empty') {
+      if (lyrics?.loadType === 'error') {
+        logger(
+          'warn',
+          'Lyrics',
+          `Lyrics source ${name} failed for ${trackInfo?.title || 'Unknown Title'}: ${lyrics.data.message}`
+        )
+        continue
+      }
+
+      if (lyrics?.loadType === 'lyrics') {
         if (
           isYouTube &&
           youtubeCaptions?.loadType === 'lyrics' &&

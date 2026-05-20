@@ -399,6 +399,14 @@ export default class GeniusLyrics {
       }
 
       if (searchResponse.statusCode !== 200) {
+        if (searchResponse.statusCode === 403) {
+          logger(
+            'warn',
+            'Lyrics',
+            `Genius search returned 403 for query "${query}", skipping provider on this host`
+          )
+          return { loadType: 'empty', data: {} }
+        }
         throw new Error(
           `Unexpected Genius search status code: ${searchResponse.statusCode}`
         )
@@ -430,6 +438,14 @@ export default class GeniusLyrics {
       }
 
       if (songPageResponse.statusCode !== 200) {
+        if (songPageResponse.statusCode === 403) {
+          logger(
+            'warn',
+            'Lyrics',
+            `Genius page returned 403 for "${songPath}", skipping provider on this host`
+          )
+          return { loadType: 'empty', data: {} }
+        }
         throw new Error(
           `Unexpected Genius page status code: ${songPageResponse.statusCode}`
         )
