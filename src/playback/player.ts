@@ -2824,8 +2824,17 @@ export class Player {
         clearTimeout(this._lyricsMarkerTimer)
         this._lyricsMarkerTimer = null
       }
-      this._recalculateLyricsIndex(undefined, undefined, true)
-      this._syncLyrics(true)
+      const hasTimedLines = lines.some(
+        (line) => Number.isFinite(line.timestamp) && line.timestamp > 0
+      )
+      if (hasTimedLines) {
+        this._recalculateLyricsIndex(undefined, undefined, true)
+        this._syncLyrics(true)
+      } else {
+        // Unsynced lyrics (all timestamps are zero) should not start marker timers,
+        // otherwise the player can enter a hot 0ms scheduling loop.
+        this.lyricsLineIndex = -1
+      }
     } else {
       this.currentLyrics = null
       this.emitEvent('LyricsNotFoundEvent')
