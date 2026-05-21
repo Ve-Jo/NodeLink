@@ -62,6 +62,8 @@ config.enableTrackStreamEndpoint = false
 config.enableLoadStreamEndpoint = false
 config.resolveExternalLinks = false
 config.fetchChannelInfo = false
+config.metrics.enabled = false
+config.connection.interval = 24 * 60 * 60 * 1000
 
 // Bun websocket server is experimental; enable explicitly.
 config.server.useBunServer =
