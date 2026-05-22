@@ -85,6 +85,7 @@ export default class ConnectionManager {
    */
   start(): void {
     const checkInterval = Math.max(1, this.config.interval || 300000)
+    if (this.interval) return
     if (checkInterval > 0) {
       logger(
         'info',

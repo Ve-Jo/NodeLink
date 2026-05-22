@@ -726,6 +726,22 @@ class NodelinkServer extends EventEmitter {
   }
 
   /**
+   * Reports whether optional background loops are already active.
+   * @internal
+   */
+  _hasBackgroundActivityRunning(): boolean {
+    const connectionInterval = (
+      this.connectionManager as unknown as {
+        interval?: NodeJS.Timeout | null
+      } | null
+    )?.interval
+
+    return Boolean(
+      this._globalUpdater || this._heartbeatInterval || connectionInterval
+    )
+  }
+
+  /**
    * Returns whether serverless idle mode is enabled for this runtime.
    * @internal
    */
@@ -764,9 +780,27 @@ class NodelinkServer extends EventEmitter {
    * @internal
    */
   _resumeBackgroundActivity(reason: string): void {
+    const alreadyRunning = this._hasBackgroundActivityRunning()
+
     if (this._serverlessIdleTimer) {
       clearTimeout(this._serverlessIdleTimer)
       this._serverlessIdleTimer = null
+    }
+
+    if (
+      !this._serverlessBackgroundPaused &&
+      alreadyRunning &&
+      !this._isServerlessModeEnabled()
+    ) {
+      return
+    }
+
+    if (
+      !this._serverlessBackgroundPaused &&
+      alreadyRunning &&
+      this._isServerlessModeEnabled()
+    ) {
+      return
     }
 
     if (this._isClusterPrimaryRuntime) {
