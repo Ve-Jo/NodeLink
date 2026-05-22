@@ -160,6 +160,12 @@ async function requestHandler(
   req: ApiRequest,
   res: ApiResponse
 ): Promise<void> {
+  ;(
+    nodelink as unknown as {
+      _resumeBackgroundActivity?: (reason: string) => void
+    }
+  )._resumeBackgroundActivity?.('api request')
+
   const originalWriteHead = res.writeHead
   res.writeHead = (status, headers) => {
     res.setHeader('Nodelink-Api-Version', '4')
@@ -215,6 +221,11 @@ async function requestHandler(
       userAgent: getHeaderValue(headerAccess['user-agent']) || null,
       reason: meta.__traceReason || null
     })
+    ;(
+      nodelink as unknown as {
+        _scheduleServerlessIdleCheck?: (reason: string) => void
+      }
+    )._scheduleServerlessIdleCheck?.('api request completed')
     originalEnd(...args)
   }
 

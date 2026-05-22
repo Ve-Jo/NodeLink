@@ -109,6 +109,8 @@ export default class SourcesManager implements SourceManagerLike {
   public searchAliasMap: Map<string, SourceInstance>
   /** Prioritized list of URL patterns for routing. */
   public patternMap: PatternEntry[]
+  /** Sources whose background activity is currently suspended. */
+  private suspendedBackgroundSources: Set<string>
 
   /**
    * Constructs a new SourcesManager.
@@ -120,6 +122,7 @@ export default class SourcesManager implements SourceManagerLike {
     this.sourceMap = new Map()
     this.searchAliasMap = new Map()
     this.patternMap = []
+    this.suspendedBackgroundSources = new Set()
   }
 
   /**
@@ -137,6 +140,7 @@ export default class SourcesManager implements SourceManagerLike {
     this.sourceMap.clear()
     this.searchAliasMap.clear()
     this.patternMap = []
+    this.suspendedBackgroundSources.clear()
 
     const processSource = async (
       name: string,
@@ -272,6 +276,47 @@ export default class SourcesManager implements SourceManagerLike {
     this.patternMap.sort(
       (a: PatternEntry, b: PatternEntry) => b.priority - a.priority
     )
+  }
+
+  /**
+   * Suspends optional source-owned background activity while the server is idle.
+   * Intended for serverless environments where idle networking prevents sleep.
+   * @public
+   */
+  public suspendBackgroundActivity(): void {
+    for (const [sourceName, source] of this.sources.entries()) {
+      if (typeof source.suspendBackgroundActivity === 'function') {
+        source.suspendBackgroundActivity()
+        this.suspendedBackgroundSources.add(sourceName)
+      }
+    }
+  }
+
+  /**
+   * Resumes previously suspended source background activity after the server wakes.
+   * @public
+   */
+  public resumeBackgroundActivity(): void {
+    for (const sourceName of this.suspendedBackgroundSources) {
+      const source = this.sources.get(sourceName)
+      if (!source) continue
+
+      if (typeof source.resumeBackgroundActivity === 'function') {
+        try {
+          source.resumeBackgroundActivity()
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          logger(
+            'warn',
+            'Sources',
+            `Failed to resume background activity for ${sourceName}: ${message}`
+          )
+          continue
+        }
+      }
+
+      this.suspendedBackgroundSources.delete(sourceName)
+    }
   }
 
   /**

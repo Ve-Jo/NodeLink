@@ -488,6 +488,9 @@ class NodelinkServer extends EventEmitter {
   voiceRelay: VoiceRelay
   _globalUpdater: NodeJS.Timeout | null
   _statsUpdater: NodeJS.Timeout | null
+  _serverlessIdleTimer: NodeJS.Timeout | null
+  _serverlessBackgroundPaused: boolean
+  _isClusterPrimaryRuntime: boolean
   supportedSourcesCache: string[] | null
   _heartbeatInterval: NodeJS.Timeout | null;
   [key: string]: unknown
@@ -576,6 +579,9 @@ class NodelinkServer extends EventEmitter {
 
     this._globalUpdater = null
     this._statsUpdater = null
+    this._serverlessIdleTimer = null
+    this._serverlessBackgroundPaused = false
+    this._isClusterPrimaryRuntime = isClusterPrimary
     this.supportedSourcesCache = null
     this._heartbeatInterval = null
 
@@ -717,6 +723,135 @@ class NodelinkServer extends EventEmitter {
       clearInterval(this._heartbeatInterval)
       this._heartbeatInterval = null
     }
+  }
+
+  /**
+   * Returns whether serverless idle mode is enabled for this runtime.
+   * @internal
+   */
+  _isServerlessModeEnabled(): boolean {
+    return this.options?.serverless?.enabled === true
+  }
+
+  /**
+   * Counts tracked players across active and resumable sessions.
+   * @internal
+   */
+  _getTrackedPlayerCount(): number {
+    let players = 0
+    for (const session of this.sessions.activeSessions.values()) {
+      players += session.players?.players?.size ?? 0
+    }
+    for (const session of this.sessions.resumableSessions.values()) {
+      players += session.players?.players?.size ?? 0
+    }
+    return players
+  }
+
+  /**
+   * Determines whether background realtime loops are still needed.
+   * @internal
+   */
+  _hasRealtimeDemand(): boolean {
+    return (
+      (this.sessions.activeSessions?.size ?? 0) > 0 ||
+      this._getTrackedPlayerCount() > 0
+    )
+  }
+
+  /**
+   * Starts optional background loops when the server becomes active.
+   * @internal
+   */
+  _resumeBackgroundActivity(reason: string): void {
+    if (this._serverlessIdleTimer) {
+      clearTimeout(this._serverlessIdleTimer)
+      this._serverlessIdleTimer = null
+    }
+
+    if (this._isClusterPrimaryRuntime) {
+      this._startMasterMetricsUpdater()
+    } else {
+      this._startGlobalUpdater()
+    }
+
+    if (!this._isClusterPrimaryRuntime || clusterEnabled) {
+      this._startHeartbeat()
+    }
+
+    this.connectionManager?.start()
+    this.sources?.resumeBackgroundActivity?.()
+
+    if (this._serverlessBackgroundPaused) {
+      logger(
+        'info',
+        'Server',
+        `Leaving serverless idle mode (${reason}).`
+      )
+      this._serverlessBackgroundPaused = false
+    }
+  }
+
+  /**
+   * Stops non-essential background loops so serverless platforms can sleep.
+   * @internal
+   */
+  _enterServerlessIdleMode(reason: string): void {
+    if (!this._isServerlessModeEnabled()) return
+    if (this._hasRealtimeDemand()) return
+
+    if (this._serverlessIdleTimer) {
+      clearTimeout(this._serverlessIdleTimer)
+      this._serverlessIdleTimer = null
+    }
+
+    this._stopGlobalPlayerUpdater()
+    this._stopHeartbeat()
+    this.connectionManager?.stop()
+    this.sources?.suspendBackgroundActivity?.()
+    cleanupHttpAgents()
+
+    if (!this._serverlessBackgroundPaused) {
+      logger(
+        'info',
+        'Server',
+        `Entering serverless idle mode (${reason}).`
+      )
+      this._serverlessBackgroundPaused = true
+    }
+  }
+
+  /**
+   * Schedules a serverless idle transition after a short grace period.
+   * @internal
+   */
+  _scheduleServerlessIdleCheck(reason: string): void {
+    if (!this._isServerlessModeEnabled()) return
+    if (this._hasRealtimeDemand()) {
+      this._resumeBackgroundActivity(reason)
+      return
+    }
+
+    if (this._serverlessIdleTimer) {
+      clearTimeout(this._serverlessIdleTimer)
+      this._serverlessIdleTimer = null
+    }
+
+    const idleGraceMs = Math.max(
+      0,
+      this.options?.serverless?.idleGraceMs ?? 15000
+    )
+
+    if (idleGraceMs === 0) {
+      this._enterServerlessIdleMode(reason)
+      return
+    }
+
+    this._serverlessIdleTimer = setTimeout(() => {
+      this._serverlessIdleTimer = null
+      this._enterServerlessIdleMode(reason)
+    }, idleGraceMs)
+    this._serverlessIdleTimer.unref?.()
   }
 
   /**
@@ -905,6 +1040,7 @@ class NodelinkServer extends EventEmitter {
               } resumed session with ID: ${oldSessionId}`
             )
             this.statsManager.incrementSessionResume(clientInfo.name, true)
+            this._resumeBackgroundActivity('session resumed')
 
             socket.on('close', (...args: (string | number | Buffer)[]) => {
               const code = args[0] as number
@@ -932,6 +1068,7 @@ class NodelinkServer extends EventEmitter {
 
               const sessionCount = this.sessions.activeSessions?.size || 0
               this.statsManager.setWebsocketConnections(sessionCount)
+              this._scheduleServerlessIdleCheck('session socket closed')
             })
 
             socket.send(
@@ -975,6 +1112,7 @@ class NodelinkServer extends EventEmitter {
             socket,
             clientInfo
           )
+          this._resumeBackgroundActivity('session created')
 
           const sessionCount = this.sessions.activeSessions?.size || 0
           this.statsManager.setWebsocketConnections(sessionCount)
@@ -1007,6 +1145,7 @@ class NodelinkServer extends EventEmitter {
 
             const sessionCount = this.sessions.activeSessions?.size || 0
             this.statsManager.setWebsocketConnections(sessionCount)
+            this._scheduleServerlessIdleCheck('session socket closed')
           })
 
           socket.send(
@@ -2517,17 +2656,11 @@ class NodelinkServer extends EventEmitter {
       this._listen()
     }
 
-    if (startOptions.isClusterPrimary) {
-      this._startMasterMetricsUpdater()
+    if (this._isServerlessModeEnabled()) {
+      this._scheduleServerlessIdleCheck('startup')
     } else {
-      this._startGlobalUpdater()
+      this._resumeBackgroundActivity('startup')
     }
-
-    if (!startOptions.isClusterPrimary || clusterEnabled) {
-      this._startHeartbeat()
-    }
-
-    this.connectionManager?.start()
     memoryTrace('start:ready')
     return this
   }

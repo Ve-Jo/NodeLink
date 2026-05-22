@@ -337,8 +337,35 @@ export default class YouTubeSource {
     await this._fetchVisitorData()
     await this.cipherManager.getCachedPlayerScript()
     await this.cipherManager.checkCipherServerStatus()
+    this.resumeBackgroundActivity()
 
-    if (this.visitorDataInterval) clearInterval(this.visitorDataInterval)
+    logger('info', 'YouTube', 'YouTube source setup complete.')
+    return true
+  }
+
+  /**
+   * Suspends periodic visitor-data refresh while the host is idle.
+   */
+  suspendBackgroundActivity(): void {
+    if (this.visitorDataInterval) {
+      clearInterval(this.visitorDataInterval)
+      this.visitorDataInterval = null
+    }
+  }
+
+  /**
+   * Resumes periodic visitor-data refresh after the host wakes.
+   */
+  resumeBackgroundActivity(): void {
+    this.suspendBackgroundActivity()
+    void this._fetchVisitorData().catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error)
+      logger(
+        'debug',
+        'YouTube',
+        `Deferred visitorData refresh after wake failed: ${message}`
+      )
+    })
     this.visitorDataInterval = setInterval(
       () => this._fetchVisitorData(),
       VISITOR_DATA_INTERVAL
@@ -346,9 +373,6 @@ export default class YouTubeSource {
     if (typeof this.visitorDataInterval.unref === 'function') {
       this.visitorDataInterval.unref()
     }
-
-    logger('info', 'YouTube', 'YouTube source setup complete.')
-    return true
   }
 
   /**
@@ -363,10 +387,7 @@ export default class YouTubeSource {
     }
     this.activeStreams.clear()
 
-    if (this.visitorDataInterval) {
-      clearInterval(this.visitorDataInterval)
-      this.visitorDataInterval = null
-    }
+    this.suspendBackgroundActivity()
 
     if (this.oauth) (this.oauth as { cleanup?: () => void }).cleanup?.()
     ;(this.cipherManager as { cleanup?: () => void })?.cleanup?.()

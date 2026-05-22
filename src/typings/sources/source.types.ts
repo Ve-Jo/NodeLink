@@ -474,6 +474,12 @@ export type SourceResultWithData = Exclude<SourceResult, { loadType: 'error' }>
 export interface SourceInstance {
   /** Called once during initialization; returns true if ready. */
   setup?: () => Promise<boolean>
+  /** Optional cleanup hook for tearing down source-owned resources. */
+  cleanup?: () => void
+  /** Suspend non-essential background activity while the server is idle. */
+  suspendBackgroundActivity?: () => void
+  /** Resume non-essential background activity after the server wakes up. */
+  resumeBackgroundActivity?: () => void
   /** Search for tracks by query. */
   search?: (
     query: string,

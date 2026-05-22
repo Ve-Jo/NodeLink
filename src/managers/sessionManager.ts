@@ -225,6 +225,11 @@ export default class SessionManager {
     }
 
     session.socket?.destroy?.()
+    ;(
+      this.nodelink as unknown as {
+        _scheduleServerlessIdleCheck?: (reason: string) => void
+      }
+    )._scheduleServerlessIdleCheck?.('session destroyed')
   }
 
   /**
@@ -238,6 +243,12 @@ export default class SessionManager {
     if (session) {
       this.activeSessions.delete(sessionId)
       await this.destroy(session)
+    } else {
+      ;(
+        this.nodelink as unknown as {
+          _scheduleServerlessIdleCheck?: (reason: string) => void
+        }
+      )._scheduleServerlessIdleCheck?.('session shutdown without active socket')
     }
   }
 

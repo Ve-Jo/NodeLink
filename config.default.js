@@ -80,6 +80,10 @@ export default {
       average: 5 // Mbps
     }
   },
+  serverless: {
+    enabled: false, // Suspend optional background networking/timers when there are no active sessions or players
+    idleGraceMs: 15000 // Small grace window before entering idle mode to avoid thrashing on quick reconnects
+  },
   maxSearchResults: 10,
   maxAlbumPlaylistLength: 100,
   playerUpdateInterval: 2000,
