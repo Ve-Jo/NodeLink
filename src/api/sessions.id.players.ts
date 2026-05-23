@@ -1319,7 +1319,19 @@ async function handler(
 
   try {
     if (req.method === 'GET') {
-      await session.players.create(pathParams.guildId)
+      const existingPlayer = session.players.get(pathParams.guildId)
+      if (!existingPlayer) {
+        sendErrorResponse(
+          req,
+          res,
+          404,
+          'Not Found',
+          'Player not found.',
+          parsedUrl.pathname
+        )
+        return
+      }
+
       sendResponse(
         req,
         res,

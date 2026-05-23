@@ -38,6 +38,16 @@ interface SessionPatchResponse {
   timeout: number
 }
 
+const SESSION_TIMEOUT_MS_COMPAT_THRESHOLD_SECONDS = 24 * 60 * 60
+
+function normalizeSessionTimeoutSeconds(timeout: number): number {
+  if (timeout > SESSION_TIMEOUT_MS_COMPAT_THRESHOLD_SECONDS) {
+    return Math.max(0, Math.ceil(timeout / 1000))
+  }
+
+  return timeout
+}
+
 /**
  * Runtime contract required by the session patch endpoint.
  */
@@ -131,7 +141,7 @@ function applySessionPatch(
   }
 
   if (payload.timeout !== undefined) {
-    session.timeout = payload.timeout
+    session.timeout = normalizeSessionTimeoutSeconds(payload.timeout)
   }
 
   return {
